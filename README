@@ -1,0 +1,120 @@
+Dualminer-cgminer is ASIC  miner for both SHA-256 and Scrypt ,it is cgminer-3.5.0-based development,had a large number of test on Raspberry pi and beagleboard.
+Certainly, on windows and linux such as ubuntu,it also run well.
+
+You can dualminer support websit(http://support.dualminer.com/) to know how to make your dm3/dm2/dm1 work effcicently use Dualminer-cgminer.
+Or
+ The flowing sections will tell you how to make the Dualminer-cgminer and run it. 
+
+
+The first verison of dualminer-cgminer ,is under debugging, so there maybe some errors and bugs. And they will be fixed in the near future. If you encounter an error ,you can submit to us through email(dualminer@broadeng.net)
+your comments and suggestions are welcome.
+
+You can miner litecoin or bitcoin by DualMiner USB.
+
+The DualMiner USB is the world's first ASIC based USB miner for both SHA-256 and Scrypt.It can be setup to mine Litecoin only, or Bitcoin and Litecoin simultaneously.
+Paying more attention to http://www.dualminer.com ,  new miner will be upcoming ,higher hash force use less power.
+
+The following will show how to compile the dualminer-cgminer.
+For more details,see README.cgminer.
+
+----------------------------------------
+Install
+
+compiling for linux(ubuntu10 version or higher)
+./configure --enable-dualminer --enable-scrypt --disable-opencl  --prefix=$DIR_PATH/
+make && make install 
+may be you need to use sudo for more permissions.
+
+
+Cross compiling for Windows
+
+
+dualminer-cgminer can be build on a linux or the win32 platform,using the mingw cross compiler collection.
+On a ubuntu based system this should work,may be  need to change the install dir where you wish to place.
+
+
+install mingw32. 
+sudo apt-get install mingw-w64
+install libpthreads-mingw-w64
+sudo apt-get install libpthreads-mingw-w64
+or
+wget http://security.ubuntu.com/ubuntu/pool/universe/p/pthreads-win32/libpthreads-mingw-w64_2.9.1+dfsg-1_all.deb
+                sudo dpkg -i libpthreads-mingw-w64_2.9.1+dfsg-1_all.deb
+                rm -rf libptheads-mingw-w64_2.9.1+dfsg-1_all.deb
+
+install  curl
+sudo wget http://curl.haxx.se/download/curl-7.34.0.tar.gz
+        sudo tar zxf curl-7.34.0.tar.gz
+        cd curl-7.34.0
+
+for x64
+        ./configure --host=i686-w64-mingw32 --prefix=/usr/i686-w64-mingw32 PKG_CONFIG_PATH=/usr/i686-w64-mingw32/lib/pkgconfig CFLAGS=-I/usr/i686-w64-mingw32/include LDFLAGS=-L/usr/i686-w64-mingw32/lib
+        make
+        sudo make install
+
+for x86
+ ./configure --host=x86_64-w64-mingw32 --prefix=/usr/x86_64-w64-mingw32 PKG_CONFIG_PATH=/usr/x86_64-w64-mingw32/lib/pkgconfig CFLAGS=-I/usr/x86_64-w64-mingw32/include LDFLAGS=-L/usr/x86_64-w64-mingw32/lib
+        make
+        sudo make install 
+
+install libusb
+download libusb from :http://sourceforge.net/projects/libusb/files/libusb-1.0/libusb-1.0.9/libusb-1.0.9.tar.bz2/download
+ 	sudo tar jxf libusb-1.0.9.tar.bz2
+        cd libusb-1.0.9
+
+for x64
+        ./configure --host=i686-w64-mingw32 --prefix=/usr/i686-w64-mingw32 PKG_CONFIG_PATH=/usr/i686-w64-mingw32/lib/pkgconfig CFLAGS=-I/usr/i686-w64-mingw32/include LDFLAGS=-L/usr/i686-w64-mingw32/lib
+        make
+        sudo make install
+
+for x86
+ ./configure --host=x86_64-w64-mingw32 --prefix=/usr/x86_64-w64-mingw32 PKG_CONFIG_PATH=/usr/x86_64-w64-mingw32/lib/pkgconfig CFLAGS=-I/usr/x86_64-w64-mingw32/include LDFLAGS=-L/usr/x86_64-w64-mingw32/lib
+        make
+        sudo make install 
+
+start compile dualminer-cgminer in mingw-64 i686
+./configure --enable-dualminer --enable-scrypt --disable-opencl --host=i686-w64-mingw32 --without-libudev --prefix=$DIR_PATH/win64-i686/ PKG_CONFIG_PATH=/usr/i686-w64-mingw32/lib/pkgconfig CFLAGS=-I/usr/i686-w64-mingw32/include LDFLAGS=-L/usr/i686-w64-mingw32/lib
+        make
+        sudo make install
+
+start compile dualminer-cgminer in mingw-64 x86
+        ./configure --enable-dualminer --enable-scrypt --disable-opencl --host=x86_64-w64-mingw32 --without-libudev --prefix=$DIR_PATH/win64-x86 PKG_CONFIG_PATH=/usr/x86_64-w64-mingw32/lib/pkgconfig CFLAGS=-I/usr/x86_64-w64-mingw32/include LDFLAGS=-L/usr/x86_64-w64-mingw32/lib
+        make
+        sudo make install
+
+
+-------------------
+Run
+
+cgminer.exe --scrypt  -o stratum+tcp://ltc.give-me-coins.com:3333 -u wakuangdenongmin.1 -p 1
+ [2014-02-21 19:29:32] Started cgminer 3.5.0
+ [2014-02-21 19:29:33] [1;32mdualminer Detect: Test Success at 2:3-i0: get 00050cdd, should: 00050cdd[0m
+ [2014-02-21 19:29:33] [1;32mDetected Ltc devices total: 1[0m
+ [2014-02-21 19:29:33] Probing for an alive pool
+ [2014-02-21 19:29:34] Pool 0 difficulty changed to 16
+ [2014-02-21 19:29:36] Network diff set to 210M
+ [2014-02-21 19:29:49] [1;32mAccepted c0acaf03 Diff 23/16 DM 0 [0m
+ [2014-02-21 19:29:53] Stratum from pool 0 detected new block
+ [2014-02-21 19:30:28] [1;32mAccepted c287c365 Diff 25/16 DM 0 [0m
+ [2014-02-21 19:30:42] [1;32mAccepted cb6160f6 Diff 31/16 DM 0 [0m
+ [2014-02-21 19:31:00] [1;32mAccepted 8c9bb4d6 Diff 57/16 DM 0 [0m
+ [2014-02-21 19:31:03] [1;32mAccepted 755728af Diff 18/16 DM 0 [0m
+ [2014-02-21 19:31:11] Stratum from pool 0 detected new block
+ [2014-02-21 19:31:30] [1;32mAccepted 08d46067 Diff 35/16 DM 0 [0m
+ [2014-02-21 19:31:36] Stratum from pool 0 detected new block
+ [2014-02-21 19:31:45] [1;32mAccepted 1d7fa1e1 Diff 17/16 DM 0 [0m
+ [2014-02-21 19:32:05] [1;32mAccepted 8d3c6be2 Diff 20/16 DM 0 [0m
+ [2014-02-21 19:32:06] [1;32mAccepted 747ca329 Diff 30/16 DM 0 [0m
+ [2014-02-21 19:32:41] [1;32mAccepted e189dfba Diff 66/16 DM 0 [0m
+ 
+
+Resources
+source:https://github.com/dualminer/dualminer
+miner:http://www.dualminer.com/
+forum:https://bitcointalk.org/index.php?topic=409756.0
+	forum.dualminer.com
+	https://bitcointalk.org/
+
+You can support the dualminer Team by providing a small donation:
+btc:14s7xNicZUi5KaxoeUfBinNUNMSdsKNFEi
+ltc:LP2Msh8x4F6hkAYcxCGGMYvAQkC1dYGEpE
