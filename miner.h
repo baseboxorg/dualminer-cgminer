@@ -1234,6 +1234,7 @@ struct pool {
 
 	/* Stratum variables */
 	char *stratum_url;
+	bool extranonce_subscribe;
 	char *stratum_port;
 	struct addrinfo stratum_hints;
 	SOCKETTYPE sock;
@@ -1246,7 +1247,7 @@ struct pool {
 	char *nonce1;
 	unsigned char *nonce1bin;
 	size_t n1_len;
-	uint32_t nonce2;
+	uint64_t nonce2;
 	int n2size;
 	char *sessionid;
 	bool has_stratum;
@@ -1326,7 +1327,7 @@ struct work {
 
 	bool		stratum;
 	char 		*job_id;
-	uint32_t	nonce2;
+	uint64_t	nonce2;
 	size_t		nonce2_len;
 	char		*ntime;
 	double		sdiff;
@@ -1423,6 +1424,7 @@ extern bool log_curses_only(int prio, const char *datetime, const char *str);
 extern void clear_logwin(void);
 extern void logwin_update(void);
 extern bool pool_tclear(struct pool *pool, bool *var);
+extern void pool_failed(struct pool *pool);
 extern struct thread_q *tq_new(void);
 extern void tq_free(struct thread_q *tq);
 extern bool tq_push(struct thread_q *tq, void *data);

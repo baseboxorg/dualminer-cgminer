@@ -641,6 +641,50 @@ bool hex2bin(unsigned char *p, const char *hexstr, size_t len)
 	return ret;
 }
 
+static const int hex2bin_tbl[256] = {
+	-1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1,
+	-1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1,
+	-1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1,
+	 0,  1,  2,  3,  4,  5,  6,  7,  8,  9, -1, -1, -1, -1, -1, -1,
+	-1, 10, 11, 12, 13, 14, 15, -1, -1, -1, -1, -1, -1, -1, -1, -1,
+	-1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1,
+	-1, 10, 11, 12, 13, 14, 15, -1, -1, -1, -1, -1, -1, -1, -1, -1,
+	-1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1,
+	-1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1,
+	-1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1,
+	-1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1,
+	-1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1,
+	-1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1,
+	-1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1,
+	-1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1,
+	-1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1,
+};
+
+static bool _valid_hex(char *s, const char *file, const char *func, const int line)
+{
+	bool ret = false;
+	int i, len;
+
+	if (unlikely(!s)) {
+		applog(LOG_ERR, "Null string passed to valid_hex from"IN_FMT_FFL, file, func, line);
+		return ret;
+	}
+	len = strlen(s);
+	for (i = 0; i < len; i++) {
+		unsigned char idx = s[i];
+
+		if (unlikely(hex2bin_tbl[idx] < 0)) {
+			applog(LOG_ERR, "Invalid char 0x%x passed to valid_hex from"IN_FMT_FFL, idx, file, func, line);
+			return ret;
+		}
+	}
+	ret = true;
+	return ret;
+}
+
+#define valid_hex(s) _valid_hex(s, __FILE__, __func__, __LINE__)
+
+
 bool fulltest(const unsigned char *hash, const unsigned char *target)
 {
 	unsigned char hash_swap[32], target_swap[32];
@@ -1084,6 +1128,23 @@ int ms_tdiff(struct timeval *end, struct timeval *start)
 double tdiff(struct timeval *end, struct timeval *start)
 {
 	return end->tv_sec - start->tv_sec + (end->tv_usec - start->tv_usec) / 1000000.0;
+}
+
+void check_extranonce_option(struct pool *pool, char * url)
+{
+	char extra_op[16],*extra_op_loc;
+	extra_op_loc = strstr(url,"#");
+        if(extra_op_loc && !pool->extranonce_subscribe)
+        {
+                strcpy(extra_op, extra_op_loc);
+                *extra_op_loc = '\0';
+		if(!strcmp(extra_op,"#xnsub"))
+		{
+			pool->extranonce_subscribe = true;
+			applog(LOG_DEBUG, "Pool %d extranonce subscribe enabled.", pool->pool_no);
+		}
+        }
+	return;
 }
 
 bool extract_sockaddr(char *url, char **sockaddr_url, char **sockaddr_port)
@@ -1561,6 +1622,40 @@ static bool parse_diff(struct pool *pool, json_t *val)
 	return true;
 }
 
+static bool parse_extranonce(struct pool *pool, json_t *val)
+{
+        int n2size;
+	char* nonce1;
+
+        nonce1 = json_array_string(val, 0);
+        if (!valid_hex(nonce1)) {
+                applog(LOG_INFO, "Failed to get valid nonce1 in parse_extranonce");
+                goto out;
+        }
+        n2size = json_integer_value(json_array_get(val, 1));
+        if (n2size < 2 || n2size > 16) {
+                applog(LOG_INFO, "Failed to get valid n2size in parse_extranonce");
+                free(nonce1);
+                goto out;
+        }
+
+        cg_wlock(&pool->data_lock);
+        pool->nonce1 = nonce1;
+        pool->n1_len = strlen(nonce1) / 2;
+        free(pool->nonce1bin);
+        pool->nonce1bin = calloc(pool->n1_len, 1);
+        if (unlikely(!pool->nonce1bin))
+                quithere(1, "Failed to calloc pool->nonce1bin");
+        hex2bin(pool->nonce1bin, pool->nonce1, pool->n1_len);
+        pool->n2size = n2size;
+	applog(LOG_NOTICE, "Pool %d confirmed mining.extranonce.subscribe with extranonce1 %s extran2size %d",
+                               pool->pool_no, pool->nonce1, pool->n2size);
+        cg_wunlock(&pool->data_lock);
+	return true;
+out:
+	return false;
+}
+
 static bool parse_reconnect(struct pool *pool, json_t *val)
 {
 	char *url, *port, address[256];
@@ -1583,8 +1678,10 @@ static bool parse_reconnect(struct pool *pool, json_t *val)
 
 	applog(LOG_NOTICE, "Reconnect requested from pool %d to %s", pool->pool_no, address);
 
-	if (!restart_stratum(pool))
-		return false;
+	if (!restart_stratum(pool)) {
+			pool_failed(pool);
+	 		return false;
+	}
 
 	return true;
 }
@@ -1670,7 +1767,10 @@ bool parse_method(struct pool *pool, char *s)
 		ret = true;
 		return ret;
 	}
-
+	if(!strncasecmp(buf, "mining.set_extranonce", 21)) {
+			ret = parse_extranonce(pool, params);
+//			goto out_decref;
+	}
 	if (!strncasecmp(buf, "client.reconnect", 16) && parse_reconnect(pool, params)) {
 		ret = true;
 		return ret;
@@ -2090,6 +2190,17 @@ void suspend_stratum(struct pool *pool)
 	mutex_unlock(&pool->stratum_lock);
 }
 
+void extranonce_subscribe_stratum(struct pool *pool)
+{
+	char s[RBUFSIZE];
+	if(pool->extranonce_subscribe)
+        {
+        	sprintf(s,"{\"id\": %d, \"method\": \"mining.extranonce.subscribe\", \"params\": []}", swork_id++);
+		applog(LOG_INFO, "Send extranonce.subscribe for stratum pool %d", pool->pool_no);
+                stratum_send(pool, s, strlen(s));
+        }
+}
+
 bool initiate_stratum(struct pool *pool)
 {
 	bool ret = false, recvd = false, noresume = false, sockd = false;
@@ -2233,6 +2344,7 @@ bool restart_stratum(struct pool *pool)
 		return false;
 	if (!auth_stratum(pool))
 		return false;
+	extranonce_subscribe_stratum(pool);
 	return true;
 }
 

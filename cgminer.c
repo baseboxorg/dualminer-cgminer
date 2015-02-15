@@ -793,6 +793,7 @@ static char *set_rr(enum pool_strategy *strategy)
  * stratum+tcp or by detecting a stratum server response */
 bool detect_stratum(struct pool *pool, char *url)
 {
+	check_extranonce_option(pool, url);
 	if (!extract_sockaddr(url, &pool->sockaddr_url, &pool->stratum_port))
 		return false;
 
@@ -1957,13 +1958,15 @@ static void gen_gbt_work(struct pool *pool, struct work *work)
 {
 	unsigned char *merkleroot;
 	struct timeval now;
+	uint64_t nonce2le;
 
 	cgtime(&now);
 	if (now.tv_sec - pool->tv_lastwork.tv_sec > 60)
 		update_gbt(pool);
 
 	cg_wlock(&pool->gbt_lock);
-	memcpy(pool->coinbase + pool->nonce2_offset, &pool->nonce2, 4);
+	nonce2le = htole64(pool->nonce2);
+	memcpy(pool->coinbase + pool->nonce2_offset, &nonce2le, pool->n2size);
 	pool->nonce2++;
 	cg_dwlock(&pool->gbt_lock);
 	merkleroot = __gbt_merkleroot(pool);
@@ -2060,8 +2063,9 @@ static bool gbt_decode(struct pool *pool, json_t *res_val)
 	free(pool->coinbasetxn);
 	pool->coinbasetxn = strdup(coinbasetxn);
 	cbt_len = strlen(pool->coinbasetxn) / 2;
-	pool->coinbase_len = cbt_len + 4;
-	/* We add 4 bytes of extra data corresponding to nonce2 of stratum */
+	/* We add 8 bytes of extra data corresponding to nonce2 */
+	pool->n2size = 8;
+	pool->coinbase_len = cbt_len + pool->n2size;
 	cal_len = pool->coinbase_len + 1;
 	align_len(&cal_len);
 	free(pool->coinbase);
@@ -2072,7 +2076,8 @@ static bool gbt_decode(struct pool *pool, json_t *res_val)
 	extra_len = (uint8_t *)(pool->coinbase + 41);
 	orig_len = *extra_len;
 	hex2bin(pool->coinbase + 42, pool->coinbasetxn + 84, orig_len);
-	*extra_len += 4;
+	*extra_len += pool->n2size;
+//	*extra_len += 4;
 	hex2bin(pool->coinbase + 42 + *extra_len, pool->coinbasetxn + 84 + (orig_len * 2),
 		cbt_len - orig_len - 42);
 	pool->nonce2_offset = orig_len + 42;
@@ -3662,6 +3667,16 @@ struct work *copy_work(struct work *base_work)
 	__copy_work(work, base_work);
 
 	return work;
+}
+
+void pool_failed(struct pool *pool)
+{
+	if (!pool_tset(pool, &pool->idle)) {
+		cgtime(&pool->tv_idle);
+		if (pool == current_pool()) {
+			switch_pools(NULL);
+		}
+	}
 }
 
 static void pool_died(struct pool *pool)
@@ -5462,6 +5477,7 @@ static void *stratum_rthread(void *userdata)
 			if (!restart_stratum(pool)) {
 				pool_died(pool);
 				while (!restart_stratum(pool)) {
+					pool_failed(pool);
 					if (pool->removed)
 						goto out;
 					cgsleep_ms(30000);
@@ -5502,6 +5518,7 @@ static void *stratum_rthread(void *userdata)
 
 			pool_died(pool);
 			while (!restart_stratum(pool)) {
+				pool_failed(pool);
 				if (pool->removed)
 					goto out;
 				cgsleep_ms(30000);
@@ -5562,9 +5579,11 @@ static void *stratum_sthread(void *userdata)
 		struct stratum_share *sshare;
 		char *noncehex, *nonce2hex;
 		uint32_t *hash32, nonce;
-		char s[1024], nonce2[8];
+		char s[1024];
+		unsigned char nonce2[8];
 		struct work *work;
 		bool submitted;
+		uint64_t *nonce2_64;
 
 		if (unlikely(pool->removed))
 			break;
@@ -5597,10 +5616,14 @@ static void *stratum_sthread(void *userdata)
 		sshare->id = swork_id++;
 		mutex_unlock(&sshare_lock);
 
-		memset(nonce2, 0, 8);
-		/* We only use uint32_t sized nonce2 increments internally */
-		memcpy(nonce2, &work->nonce2, sizeof(uint32_t));
-		nonce2hex = bin2hex((const unsigned char *)nonce2, work->nonce2_len);
+		nonce2_64 = (uint64_t *)nonce2;
+		*nonce2_64 = htole64(work->nonce2);
+		nonce2hex =bin2hex((const unsigned char *)nonce2, work->nonce2_len);
+
+//		memset(nonce2, 0, 8);
+//		/* We only use uint32_t sized nonce2 increments internally */
+//		memcpy(nonce2, &work->nonce2, sizeof(uint32_t));
+//		nonce2hex = bin2hex((const unsigned char *)nonce2, work->nonce2_len);
 		if (unlikely(!nonce2hex))
 			quit(1, "Failed to bin2hex nonce2 in stratum_thread");
 
@@ -5686,6 +5709,7 @@ static void *longpoll_thread(void *userdata);
 static bool stratum_works(struct pool *pool)
 {
 	applog(LOG_INFO, "Testing pool %d stratum %s", pool->pool_no, pool->stratum_url);
+	check_extranonce_option(pool, pool->stratum_url);
 	if (!extract_sockaddr(pool->stratum_url, &pool->sockaddr_url, &pool->stratum_port))
 		return false;
 
@@ -5719,7 +5743,7 @@ retry_stratum:
 
 		if (!init) {
 			bool ret = initiate_stratum(pool) && auth_stratum(pool);
-
+			extranonce_subscribe_stratum(pool);
 			if (ret)
 				init_stratum_threads(pool);
 			else
@@ -6001,12 +6025,15 @@ static void gen_stratum_work(struct pool *pool, struct work *work)
 {
 	unsigned char merkle_root[32], merkle_sha[64];
 	uint32_t *data32, *swap32;
+	uint64_t nonce2le;
 	int i;
 
 	cg_wlock(&pool->data_lock);
 
-	/* Update coinbase */
-	memcpy(pool->coinbase + pool->nonce2_offset, &pool->nonce2, sizeof(uint32_t));
+	/* Update coinbase. Always use an LE encoded nonce2 to fill in values
+	 * from left to right and prevent overflow errors with small n2sizes */
+	nonce2le = htole64(pool->nonce2);
+	memcpy(pool->coinbase + pool->nonce2_offset, &nonce2le, pool->n2size);
 	work->nonce2 = pool->nonce2++;
 	work->nonce2_len = pool->n2size;
 
@@ -6046,7 +6073,8 @@ static void gen_stratum_work(struct pool *pool, struct work *work)
 		merkle_hash = bin2hex((const unsigned char *)merkle_root, 32);
 		applog(LOG_DEBUG, "Generated stratum merkle %s", merkle_hash);
 		applog(LOG_DEBUG, "Generated stratum header %s", header);
-		applog(LOG_DEBUG, "Work job_id %s nonce2 %d ntime %s", work->job_id, work->nonce2, work->ntime);
+		applog(LOG_DEBUG, "Work job_id %s nonce2 %"PRIu64" ntime %s", work->job_id,
+				       work->nonce2, work->ntime);
 		free(header);
 		free(merkle_hash);
 	}
